@@ -1,0 +1,327 @@
+importFromBPMNXml(xmlDoc): Model {
+    const model = new Model();
+    const shapes = this.parseShapes(xmlDoc);
+    this.importPlacesBPMN(model, xmlDoc, shapes);
+    this.importTransitionsBPMN(model, xmlDoc, shapes);
+    this.importArcsBPMN(model, xmlDoc);
+    const startPlaces = this.getStartEvents(xmlDoc, model, shapes);
+    const endPlaces = this.getEndEvents(xmlDoc, model, shapes);
+    this.createEmitter(model, startPlaces);
+    this.createCollector(model, endPlaces);
+    const parallelGateways = this.parseParallelGateways(xmlDoc);
+    const exclusiveGateways = this.parseExclusiveGateways(xmlDoc);
+    this.createExclusiveGateways(model, exclusiveGateways, shapes);
+    this.createParallelGateways(model, parallelGateways, shapes);
+    return model;
+  }
+  private createExclusiveGateways(model: Model, exclusiveGateways: Gateway[], shapes: Shape[]) {
+    let incomingPlace;
+    for (const gateway of exclusiveGateways) {
+      const gatewayShape = this.getShapeByID(gateway.id, shapes);
+      for (const incoming of gateway.incomingElements) {
+        const incomingTransition = this.getTransitionByID(incoming, model);
+        incomingPlace = new Place(incomingTransition.x + 100, incomingTransition.y, false,  'Place' + incoming);
+        incomingPlace.label = 'P(x,F1)';
+        model.places.push(incomingPlace);
+        model.arcs.push(new Arc(incomingTransition, incomingPlace, 'regular', 'Transition Place Arc' + incoming));
+        // model.arcs.push(new Arc(incomingPlace, gatewayTransition, 'regular', 'Place Gateway Arc' + incoming));
+      }
+      for (const outgoing of gateway.outgoingElements) {
+        const outgoingPlace = this.getPlaceByID(outgoing, model);
+        const gatewayTransition = new Transition(outgoingPlace.x - 100, outgoingPlace.y, 'Gateway Exclusive Transition ' + outgoingPlace.id);
+        gatewayTransition.label = 'T(D1)';
+        model.transitions.push(gatewayTransition);
+        model.arcs.push(new Arc(gatewayTransition, outgoingPlace, 'regular', 'Gateway Outgoing Arc' + outgoing));
+        model.arcs.push(new Arc(incomingPlace, gatewayTransition, 'regular', 'Incoming-Outgoing' + outgoing));
+
+      }
+    }
+  }
+  private parseExclusiveGateways(xmlDoc) {
+    const exclusiveGateways = [];
+    let incomingArray = [];
+    let outgoingArray = [];
+    const xmlExclusiveGateways = xmlDoc.getElementsByTagName('bpmn:exclusiveGateway');
+    for (const item of xmlExclusiveGateways) {
+      incomingArray = [];
+      outgoingArray = [];
+      const id = item.attributes.getNamedItem('id').value;
+      for (const child of item.children) {
+        if (child.nodeName === 'bpmn:incoming') {
+          incomingArray.push(this.getSourceRefByFlowID(child.innerHTML, xmlDoc));
+        } else if (child.nodeName === 'bpmn:outgoing') {
+          outgoingArray.push(this.getTargetRefByFlowID(child.innerHTML, xmlDoc));
+        }
+      }
+      let name;
+      if (item.attributes.getNamedItem('name') === null) {
+        name = 'Gateway';
+      } else {
+        name = item.attributes.getNamedItem('name').value;
+      }
+      exclusiveGateways.push(new Gateway(id, name, incomingArray, outgoingArray));
+    }
+    return exclusiveGateways;
+  }
+  private getShapeByID(id: string, shape: Shape[]) {
+    for (const item of shape) {
+      if (item.element === id) {
+        return item;
+      }
+    }
+    return null;
+  }
+  private getPlaceByID(id: string, model) {
+    for (const item of model.places) {
+      if (item.id === id) {
+        return item;
+      }
+    }
+    return null;
+  }
+  private getTransitionByID(id: string, model) {
+    for (const item of model.transitions) {
+      if (item.id === id) {
+        return item;
+      }
+    }
+    return null;
+  }
+  private getElementById(id: string, model: Model) {
+    for (const item of model.places) {
+      if (item.id === id) {
+        return item;
+      }
+    }
+    for (const item of model.transitions) {
+      if (item.id === id) {
+        return item;
+      }
+    }
+    return null;
+  }
+  private getSourceRefByFlowID(id: string, xmlDoc) {
+    const xmlSequenceFlow = xmlDoc.getElementsByTagName('bpmn:sequenceFlow');
+    for (const item of xmlSequenceFlow) {
+      if (item.attributes.getNamedItem('id').value === id) {
+        return item.attributes.getNamedItem('sourceRef').value;
+      }
+    }
+  }
+  private getTargetRefByFlowID(id: string, xmlDoc) {
+    const xmlSequenceFlow = xmlDoc.getElementsByTagName('bpmn:sequenceFlow');
+    for (const item of xmlSequenceFlow) {
+      if (item.attributes.getNamedItem('id').value === id) {
+        return item.attributes.getNamedItem('targetRef').value;
+      }
+    }
+  }
+  private createParallelGateways(model: Model, parallelGateways: Gateway[], shapes: Shape[]) {
+    for (const gateway of parallelGateways) {
+      const gatewayShape = this.getShapeByID(gateway.id, shapes);
+      const gatewayTransition = new Transition(gatewayShape.x, gatewayShape.y, gateway.id);
+      gatewayTransition.label = gateway.name;
+      model.transitions.push(gatewayTransition);
+      for (const outgoing of gateway.outgoingElements) {
+        const outgoingPlace = this.getPlaceByID(outgoing, model);
+        model.arcs.push(new Arc(gatewayTransition, outgoingPlace, 'regular', 'Gateway Outgoing Arc' + outgoing));
+      }
+      for (const incoming of gateway.incomingElements) {
+        const incomingTransition = this.getElementById(incoming, model);
+        const incomingPlace = new Place(incomingTransition.x + 50, incomingTransition.y, false,  'Place' + incoming);
+        incomingPlace.label = 'P(x,F1)';
+        model.places.push(incomingPlace);
+        model.arcs.push(new Arc(incomingTransition, incomingPlace, 'regular', 'Transition Place Arc' + incoming));
+        model.arcs.push(new Arc(incomingPlace, gatewayTransition, 'regular', 'Place Gateway Arc' + incoming));
+      }
+    }
+  }
+  private parseParallelGateways(xmlDoc) {
+    const parallelGateways = [];
+    let incomingArray = [];
+    let outgoingArray = [];
+    const xmlParallelGateways = xmlDoc.getElementsByTagName('bpmn:parallelGateway');
+    console.log(xmlParallelGateways);
+    for (const item of xmlParallelGateways) {
+      console.log(item);
+      incomingArray = [];
+      outgoingArray = [];
+      const id = item.attributes.getNamedItem('id').value;
+      for (const child of item.children) {
+        if (child.nodeName === 'bpmn:incoming') {
+          incomingArray.push(this.getSourceRefByFlowID(child.innerHTML, xmlDoc));
+        } else if (child.nodeName === 'bpmn:outgoing') {
+          outgoingArray.push(this.getTargetRefByFlowID(child.innerHTML, xmlDoc));
+        }
+      }
+      let name;
+      if (item.attributes.getNamedItem('name') === null) {
+        name = 'Gateway';
+      } else {
+        name = item.attributes.getNamedItem('name').value;
+      }
+      parallelGateways.push(new Gateway(id, name, incomingArray, outgoingArray));
+    }
+    console.log(parallelGateways);
+    return parallelGateways;
+  }
+  private getStartEvents(xmlDoc, model: Model, shapes: Shape[]) {
+    const startPlaces = [];
+    const xmlStartEvents = xmlDoc.getElementsByTagName('bpmn:startEvent');
+    for (const item of xmlStartEvents) {
+      for (const place of model.places) {
+        if (item.attributes.getNamedItem('id').value === place.id) {
+          startPlaces.push(place);
+        }
+      }
+    }
+    return startPlaces;
+  }
+  private getEndEvents(xmlDoc, model: Model, shapes: Shape[]) {
+    const endPlaces = [];
+    const xmlEndEvents = xmlDoc.getElementsByTagName('bpmn:endEvent');
+    for (const item of xmlEndEvents) {
+      for (const place of model.places) {
+        if (item.attributes.getNamedItem('id').value === place.id) {
+          endPlaces.push(place);
+        }
+      }
+    }
+    return endPlaces;
+  }
+  private createEmitter(model: Model, startPlaces: Place[]) { // change for variables
+    let startTransition;
+    let emitter;
+    for (const place of startPlaces) {
+      startTransition = new Transition(place.x - 50, place.y, 'StartTransition' + place.id);
+      startTransition.label = 'S T';
+      model.transitions.push(startTransition);
+      model.arcs.push(new Arc(startTransition, model.places[0], 'regular', 'StartTransition Arc' + place.id));
+      emitter = new Place(place.x - 100, place.y, false, 'Emitter' + place.id);
+      emitter.label = 'Emitter';
+      emitter.marking = 1;
+      model.places.push(emitter);
+      model.arcs.push(new Arc(emitter, startTransition, 'regular', 'Emitter Arc' + place.id));
+    }
+  }
+  private createCollector(model: Model, endPlaces: Place[]) {
+    let endTransition;
+    let collector;
+    for (const place of endPlaces) {
+      endTransition = new Transition(place.x + 50, place.y, 'EndTransition' + place.id);
+      endTransition.label = 'E T';
+      model.transitions.push(endTransition);
+      model.arcs.push(new Arc(place, endTransition, 'regular', 'EndTransition Arc' + place.id));
+      collector = new Place(endTransition.x + 50, endTransition.y, false, 'Collector' + place.id);
+      collector.label = 'Collector';
+      model.places.push(collector);
+      model.arcs.push(new Arc(endTransition, collector, 'regular', 'Collector Arc' + place.id));
+    }
+  }
+
+  private importArcsBPMN(model: Model, xmlDoc) {
+    const arcs = [];
+    let source;
+    let target;
+    const xmlArcs = xmlDoc.getElementsByTagName('bpmn:sequenceFlow');
+    for (let i = 0; i < xmlArcs.length; i++) {
+      let sourceFound = 0;
+      for (const place of model.places) {
+        if (place.id === xmlArcs[i].attributes.getNamedItem('sourceRef').value) {
+          source = place;
+          sourceFound = 1;
+          break;
+        }
+      }
+      if (sourceFound === 0) {
+        for (const trans of model.transitions) {
+          if (trans.id === xmlArcs[i].attributes.getNamedItem('sourceRef').value) {
+            source = trans;
+            sourceFound = 2;
+            break;
+          }
+        }
+      }
+      if (sourceFound === 2) {
+        for (const place of model.places) {
+          if (place.id === xmlArcs[i].attributes.getNamedItem('targetRef').value) {
+            target = place;
+            break;
+          }
+        }
+      }
+      if (sourceFound === 1) {
+        for (const trans of model.transitions) {
+          if (trans.id === xmlArcs[i].attributes.getNamedItem('targetRef').value) {
+            target = trans;
+            break;
+          }
+        }
+      }
+      if (source.id !== target.id) { // fix later, problem with Gateway and creation arc with same source/target
+        model.arcs[i] = new Arc(source, target, 'regular', xmlArcs[i].attributes.getNamedItem('id').value);
+      }
+    }
+
+  }
+  private parseShapes(xmlDoc): Shape[] {
+    const shapes = [];
+    const xmlShape = xmlDoc.getElementsByTagName('bpmndi:BPMNShape');
+    const xmlProcess = xmlDoc.getElementsByTagName('bpmn:process')[0].children;
+    let bpmnElement;
+    let xCoord;
+    let yCoord;
+    let name;
+    for (let i = 0; i < xmlShape.length; i++) {
+      for (const item of xmlProcess) {
+        if (xmlShape[i].attributes.getNamedItem('bpmnElement').value === item.attributes.getNamedItem('id').value) {
+
+          bpmnElement = xmlShape[i].attributes.getNamedItem('bpmnElement').value;
+          xCoord = Number(xmlShape[i].children.item(0).attributes.getNamedItem('x').value);
+          yCoord = Number(xmlShape[i].children.item(0).attributes.getNamedItem('y').value);
+          if (item.attributes.getNamedItem('name') === null) {
+            name = bpmnElement.split('_')[0];
+          } else {
+            name = item.attributes.getNamedItem('name').value;
+          }
+          shapes[i] = new Shape(bpmnElement, xCoord, yCoord, name);
+        }
+      }
+    }
+    console.log(shapes);
+    return shapes;
+  }
+
+  private importTransitionsBPMN(model: Model, xmlDoc, shapes: Shape[]) {
+    model.transitions = [];
+    for (let i = 0, j = 0; i < shapes.length; i++) {
+      if (shapes[i].element.includes('Task') || shapes[i].element.includes('Activity')) {
+        model.transitions[j] = new Transition(shapes[i].x, shapes[i].y, shapes[i].element);
+        model.transitions[j].label = shapes[i].name;
+        j++;
+      }
+    }
+  }
+
+  private importPlacesBPMN(model: Model, xmlDoc, shapes: Shape[]) {
+    model.places = [];
+    for (let i = 0, j = 0; i < shapes.length; i++) {
+      if (shapes[i].element.includes('Event')) {
+        model.places[j] = new Place(shapes[i].x, shapes[i].y, false, shapes[i].element);
+        model.places[j].label = shapes[i].name;
+        j++;
+      }
+    }
+    console.log(model.places);
+  }
+  private importModelBPMN(model: Model, xmlDoc) {
+    model.id = 'some id';
+    model.version = 'some version';
+    model.initials = 'some initials';
+    model.title = 'some title';
+    model.icon = 'some icon';
+    model.defaultRole = true;
+    model.transitionRole = false;
+    model.caseName = 'some case name';
+    model.transitions = [];
+  }
