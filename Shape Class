@@ -1,0 +1,42 @@
+export class Shape {
+    private _x: number;
+    private _y: number;
+    private _element: string;
+    private _name: string;
+
+    constructor(element, x, y, name) {
+        this._x = x;
+        this._y = y;
+        this._element = element;
+        this._name = name;
+    }
+    get x(): number {
+        return this._x;
+    }
+
+    set x(value: number) {
+            this._x = value;
+    }
+
+    get y(): number {
+        return this._y;
+    }
+
+    set y(value: number) {
+        this._y = value;
+    }
+    get element(): string {
+        return this._element;
+    }
+
+    set element(value: string) {
+        this._element = value;
+    }
+    get name(): string {
+        return this._name;
+    }
+
+    set name(value: string) {
+        this._name = value;
+    }
+}
